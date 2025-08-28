@@ -1,0 +1,26 @@
+# Arquivos do Excel
+*.xlsx
+*.xls
+*.xlsm
+
+# Arquivos temporários do Excel
+~$*.xlsx
+
+# Pastas com dados processados
+/data/processed/
+/output/
+
+# Ambiente virtual Python
+venv/
+.venv/
+
+# Arquivos sensíveis
+.env
+secrets.py
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Jupyter Notebooks (opcional)
+.ipynb_checkpoints/
