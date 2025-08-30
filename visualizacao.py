@@ -28,6 +28,10 @@ df_processado.columns = df_processado.columns.str.strip().str.upper()
 print("\n--- 3. Removendo dados irrelevantes (BOOSTER) ---")
 # Filtramos a linha que tem o nome 'BOOSTER' e criamos um novo DataFrame sem ela.
 df_processado = df_processado[df_processado['RUA'] != 'BOOSTER'].copy()
+
+
+"resolver o codigo amanaha"
+# df_processado = df_processado[df_processado['RUA'] != 'ITUPARARANGA'].copy()
 print("Linhas com 'BOOSTER' removidas com sucesso.")
 
 
@@ -83,3 +87,7 @@ print("\n----- Linhas Residenciais -----")
 print(df_residencial[['RUA', 'TIPO_DE_PONTO_DETALHADO', 'PH', 'COR']].head(10)) # Mostra as 10 primeiras linhas
 
 print("\n--- Script concluído com sucesso! ---")
+
+# visualizacao de dados 
+
+
