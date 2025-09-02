@@ -48,7 +48,8 @@ print("\n--- 5. Criando categorias separadas para ETA e Mananciais ---")
 lista_eta = ['ETA CERRADO']
 lista_outros_mananciais = [
     'CLEMENTE ADUTORA', 'CLEMENTE REPRESA', 'CLEMENTE FUNDO',
-    'ETA CERRADO SAÍDA', 'CANAL CLEMENTE', 'REPRESA IPANEMINHA', 'IPANEMINHA REPRESA'
+    'ETA CERRADO SAÍDA', 'CANAL CLEMENTE', 'REPRESA IPANEMINHA', 'IPANEMINHA REPRESA', 'ITUPARARANGA', 'REPRESA DE ITUPARARANGA', ' ITUPARARANGA( BARRAGEM )', 
+    'ITUPARARANGA( MARGEM PIEDADE )', 'REP. ITUPARARANGA', 'ITUPARARANGA – BARRAGEM' , 'ITUPARARANGA – 7,9 m profundidade'
 ]
 
 condicao_eta = df_processado['RUA'].str.contains('|'.join(lista_eta), case=False, na=False)
