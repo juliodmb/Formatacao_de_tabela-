@@ -24,3 +24,7 @@ __pycache__/
 
 # Jupyter Notebooks (opcional)
 .ipynb_checkpoints/
+
+# Ignorar arquivos HTML salvos do navegador
+*.html
+*.htm

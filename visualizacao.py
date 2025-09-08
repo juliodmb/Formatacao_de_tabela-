@@ -46,7 +46,7 @@ for col in colunas_para_numericas:
 # --- 5. Engenharia de Features: Criando as Categorias de Ponto ---
 print("\n--- 5. Criando categorias separadas para ETA e Mananciais ---")
 lista_eta = ['ETA CERRADO']
-lista_outros_mananciais = [
+lista_outros_mananciais = [ # coloquei mais inputs (de mananciais)
     'CLEMENTE ADUTORA', 'CLEMENTE REPRESA', 'CLEMENTE FUNDO',
     'ETA CERRADO SAÍDA', 'CANAL CLEMENTE', 'REPRESA IPANEMINHA', 'IPANEMINHA REPRESA', 'ITUPARARANGA', 'REPRESA DE ITUPARARANGA', ' ITUPARARANGA( BARRAGEM )', 
     'ITUPARARANGA( MARGEM PIEDADE )', 'REP. ITUPARARANGA', 'ITUPARARANGA – BARRAGEM' , 'ITUPARARANGA – 7,9 m profundidade'
