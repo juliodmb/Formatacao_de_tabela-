@@ -95,8 +95,6 @@ print("\n--- Script concluído com sucesso! ---")
 # visualizacao de dados usando metodo spearman 
 
 '''
-
-
 # Lista de variáveis para correlação
 cols = ["PH", "COR", "TURBIDEZ", "CLORO"]
 
