@@ -9,7 +9,10 @@ import pandas as pd
 import numpy as np 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import pandas as pd
+import plotly.express as px
+import plotly.subplots as sp
+import webbrowser
 
 # --- 1. Carregando o Dataset ---
 print("--- 1. Carregando o Dataset ---")
@@ -89,9 +92,63 @@ print(df_residencial[['RUA', 'TIPO_DE_PONTO_DETALHADO', 'PH', 'COR']].head(10)) 
 
 print("\n--- Script concluído com sucesso! ---")
 
-# visualizacao de dados 
+# visualizacao de dados usando metodo spearman 
 
 '''
+
+
+# Lista de variáveis para correlação
+cols = ["PH", "COR", "TURBIDEZ", "CLORO"]
+
+# Calcula as correlações
+corr_eta = df_eta[cols].corr(method="spearman")
+corr_mananciais = df_mananciais[cols].corr(method="spearman")
+corr_residencial = df_residencial[cols].corr(method="spearman")
+
+# Subplots (1 linha, 3 colunas)
+fig = sp.make_subplots(rows=1, cols=3, subplot_titles=("ETA_CERRADO", "Outros_Mananciais", "Residencial"))
+
+# ETA CERRADO
+fig.add_heatmap(
+    z=corr_eta.values,
+    x=corr_eta.columns,
+    y=corr_eta.index,
+    colorscale="RdBu",
+    zmin=-1, zmax=1,
+    row=1, col=1
+)
+
+# Outros Mananciais
+fig.add_heatmap(
+    z=corr_mananciais.values,
+    x=corr_mananciais.columns,
+    y=corr_mananciais.index,
+    colorscale="RdBu",
+    zmin=-1, zmax=1,
+    row=1, col=2
+)
+
+# Residencial
+fig.add_heatmap(
+    z=corr_residencial.values,
+    x=corr_residencial.columns,
+    y=corr_residencial.index,
+    colorscale="RdBu",
+    zmin=-1, zmax=1,
+    row=1, col=3
+)
+
+# Layout final
+fig.update_layout(
+    title="Correlação de Spearman por Tipo de Ponto",
+    width=1200,
+    height=500,
+    coloraxis=dict(colorscale="RdBu", cmin=-1, cmax=1)
+)
+
+# Salva em HTML e abre no navegador
+fig.write_html("correlacoes_spearman.html")
+webbrowser.open("correlacoes_spearman.html")
 
 '''
 
