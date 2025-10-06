@@ -38,3 +38,33 @@ __pycache__/
 
 # Ignorar pasta figs 
 *. figs/resumo_desbalanceamento.csv
+
+
+# Dados e resultados
+figs/
+output/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# Arquivos de dados grandes
+*.xlsx
+*.csv
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Sistema
+.DS_Store
+Thumbs.db
