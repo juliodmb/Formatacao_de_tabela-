@@ -13,7 +13,32 @@ import pandas as pd
 import plotly.express as px
 import plotly.subplots as sp
 import webbrowser
+from sklearn.decomposition import PCA
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import os
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import average_precision_score
+import shap
+import warnings
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader, TensorDataset
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+warnings.filterwarnings("ignore")
 
+# Criar pasta de figuras
+os.makedirs("figs", exist_ok=True)
+
+# Configuração estética
+sns.set(style="whitegrid", palette="muted")
 # --- 1. Carregando o Dataset ---
 print("--- 1. Carregando o Dataset ---")
 try:
@@ -92,6 +117,261 @@ print(df_residencial[['RUA', 'TIPO_DE_PONTO_DETALHADO', 'PH', 'COR']].head(10)) 
 
 print("\n--- Script concluído com sucesso! ---")
 
+
+# --- 3. MÉTODO DE BALANCEAMENTO CORRIGIDO ---
+print("========================================================================")
+print("APLICANDO BALANCEAMENTO COM PYTORCH WEIGHTED LOSS")
+print("========================================================================")
+
+class BalancedWaterQualityDataset(Dataset):
+    """
+    Dataset que aplica balanceamento via WeightedRandomSampler
+    CORREÇÃO: Agora armazena labels como atributo
+    """
+    def __init__(self, df, feature_columns, target_column, sequence_length=5):
+        self.df = df.sort_index().reset_index(drop=True)
+        self.feature_columns = feature_columns
+        self.target_column = target_column
+        self.sequence_length = sequence_length
+        
+        # Prepara os dados
+        self.features = self.df[feature_columns].fillna(0).values.astype(np.float32)
+        
+        # Converte target para binário
+        target_data = self.df[target_column].fillna(0).values
+        if np.unique(target_data).size > 2:
+            target_binary = (target_data > 0).astype(np.int64)
+        else:
+            target_binary = target_data.astype(np.int64)
+        
+        # CORREÇÃO: Cria sequências e armazena labels como atributo
+        self.sequences, self.labels = self._create_sequences(target_binary)
+        
+        # Calcula pesos para balanceamento
+        self.sample_weights = self._calculate_sample_weights()
+    
+    def _create_sequences(self, target_binary):
+        sequences = []
+        labels = []
+        
+        for i in range(len(self.features) - self.sequence_length):
+            seq = self.features[i:i + self.sequence_length]
+            label = target_binary[i + self.sequence_length]
+            
+            sequences.append(seq)
+            labels.append(label)
+        
+        return torch.FloatTensor(sequences), torch.LongTensor(labels)
+    
+    def _calculate_sample_weights(self):
+        """Calcula pesos para cada amostra baseado na frequência da classe"""
+        class_counts = np.bincount(self.labels.numpy())
+        class_weights = 1. / torch.tensor(class_counts, dtype=torch.float32)
+        
+        sample_weights = class_weights[self.labels]
+        return sample_weights
+    
+    def get_balanced_sampler(self):
+        """Retorna sampler balanceado"""
+        return WeightedRandomSampler(
+            weights=self.sample_weights,
+            num_samples=len(self.sample_weights),
+            replacement=True
+        )
+    
+    def __len__(self):
+        return len(self.sequences)
+    
+    def __getitem__(self, idx):
+        return self.sequences[idx], self.labels[idx]
+
+class WeightedFocalLoss(nn.Module):
+    """
+    Loss function que combina:
+    - Weighted Cross Entropy (para balanceamento)
+    - Focal Loss (para focar em exemplos difíceis)
+    """
+    def __init__(self, weights=None, alpha=0.25, gamma=2.0):
+        super().__init__()
+        self.weights = weights
+        self.alpha = alpha
+        self.gamma = gamma
+    
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, weight=self.weights, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        return focal_loss.mean()
+
+# --- 4. FUNÇÃO PARA VERIFICAÇÃO VISUAL E NUMÉRICA ---
+def verificar_balanceamento(dataloader, target_name, tipo_ponto, etapa="APOS BALANCEAMENTO"):
+    """
+    Verifica visualmente e numericamente se o balanceamento funcionou
+    """
+    print("=" * 60)
+    print(f"VERIFICANDO BALANCEAMENTO: {target_name} - {tipo_ponto}")
+    print(f"ETAPA: {etapa}")
+    print("=" * 60)
+    
+    # Coleta todas as labels do DataLoader
+    all_labels = []
+    for batch_X, batch_y in dataloader:
+        all_labels.extend(batch_y.numpy())
+    
+    all_labels = np.array(all_labels)
+    
+    # Análise numérica
+    contagem = np.bincount(all_labels)
+    total = len(all_labels)
+    proporcao = (contagem / total * 100).round(2)
+    
+    if len(contagem) == 2:
+        ratio = contagem[0] / contagem[1]
+        nivel = "BALANCEADO" if ratio < 3 else "QUASE BALANCEADO" if ratio < 5 else "AINDA DESBALANCEADO"
+    else:
+        ratio = float('inf')
+        nivel = "SO UMA CLASSE"
+    
+    # Visualização
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Gráfico de barras
+    cores = ['#2E86AB', '#A23B72']
+    labels_barras = ['Ausente (0)', 'Presente (1)'] if len(contagem) == 2 else ['Unica Classe']
+    
+    bars = ax1.bar(range(len(contagem)), contagem, color=cores[:len(contagem)], alpha=0.8, edgecolor='black')
+    ax1.set_title(f'Distribuicao - {target_name}\n{tipo_ponto}\n{etapa}', fontsize=14, fontweight='bold')
+    ax1.set_xlabel('Classe', fontweight='bold')
+    ax1.set_ylabel('Numero de Amostras', fontweight='bold')
+    ax1.set_xticks(range(len(contagem)))
+    ax1.set_xticklabels(labels_barras)
+    ax1.grid(True, alpha=0.3)
+    
+    for bar, valor, perc in zip(bars, contagem, proporcao):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height + max(contagem)*0.01,
+                f'{valor}\n({perc}%)', ha='center', va='bottom', fontweight='bold')
+    
+    # Gráfico de pizza
+    if len(contagem) == 2:
+        ax2.pie(contagem, labels=[f'Ausente\n{contagem[0]}', f'Presente\n{contagem[1]}'], 
+                colors=cores, autopct='%1.1f%%', startangle=90)
+        ax2.set_title(f'Proporcoes\nRatio: {ratio:.2f}:1\n{nivel}', fontsize=12, fontweight='bold')
+    else:
+        ax2.text(0.5, 0.5, f'So uma classe\npresente', ha='center', va='center', fontsize=12, fontweight='bold')
+        ax2.set_title('Distribuicao', fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    plt.savefig(f'figs/verificacao_{target_name}_{tipo_ponto}_{etapa.replace(" ", "_")}.png', 
+                dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # Relatório numérico
+    print("RELATORIO NUMERICO:")
+    print(f"   Total de amostras: {total}")
+    print(f"   Distribuicao: {dict(zip(range(len(contagem)), contagem))}")
+    print(f"   Proporcao (%): {dict(zip(range(len(proporcao)), proporcao))}")
+    if len(contagem) == 2:
+        print(f"   Ratio: {ratio:.2f}:1")
+        print(f"   Status: {nivel}")
+    
+    return ratio, nivel
+
+# --- 5. APLICAÇÃO PRÁTICA CORRIGIDA ---
+print("========================================================================")
+print("APLICANDO BALANCEAMENTO NA PRATICA")
+print("========================================================================")
+
+# Configurações
+feature_columns = ['PH', 'COR', 'TURBIDEZ', 'CLORO']
+sequence_length = 5
+batch_size = 32
+
+resultados_balanceamento = {}
+
+for tipo_ponto in df_processado['TIPO_DE_PONTO_DETALHADO'].unique():
+    print(f"PROCESSANDO: {tipo_ponto}")
+    print("-" * 50)
+    
+    df_tipo = df_processado[df_processado['TIPO_DE_PONTO_DETALHADO'] == tipo_ponto].copy()
+    
+    if len(df_tipo) < 20:
+        print(f"Poucos dados ({len(df_tipo)} amostras). Pulando...")
+        continue
+    
+    # Define variáveis alvo baseadas no tipo
+    if tipo_ponto == 'Residencial':
+        target_columns = [col for col in ['COLIFORMES_TOTAIS', 'E_COLI', 'RECLAMACAO'] if col in df_tipo.columns]
+    else:
+        target_columns = [col for col in ['COLIFORMES_TOTAIS', 'E_COLI'] if col in df_tipo.columns]
+    
+    resultados_balanceamento[tipo_ponto] = {}
+    
+    for target_col in target_columns:
+        print(f"Balanceando: {target_col}")
+        
+        try:
+            # Cria dataset balanceado
+            dataset = BalancedWaterQualityDataset(
+                df_tipo, feature_columns, target_col, sequence_length
+            )
+            
+            # DataLoader SEM balanceamento (para comparação)
+            dataloader_desbalanceado = DataLoader(
+                dataset, batch_size=batch_size, shuffle=True
+            )
+            
+            # DataLoader COM balanceamento
+            dataloader_balanceado = DataLoader(
+                dataset, batch_size=batch_size, 
+                sampler=dataset.get_balanced_sampler()
+            )
+            
+            # Verifica ANTES do balanceamento
+            print("ANTES do balanceamento:")
+            ratio_antes, status_antes = verificar_balanceamento(
+                dataloader_desbalanceado, target_col, tipo_ponto, "ANTES BALANCEAMENTO"
+            )
+            
+            # Verifica DEPOIS do balanceamento
+            print("DEPOIS do balanceamento:")
+            ratio_depois, status_depois = verificar_balanceamento(
+                dataloader_balanceado, target_col, tipo_ponto, "APOS BALANCEAMENTO"
+            )
+            
+            # Calcula melhoria
+            if ratio_antes != float('inf') and ratio_depois != float('inf'):
+                melhoria = ((ratio_antes - ratio_depois) / ratio_antes) * 100
+                print(f"MELHORIA: {melhoria:.1f}% de reducao no desbalanceamento")
+            
+            resultados_balanceamento[tipo_ponto][target_col] = {
+                'ratio_antes': ratio_antes,
+                'ratio_depois': ratio_depois,
+                'status_antes': status_antes,
+                'status_depois': status_depois,
+                'dataset': dataset
+            }
+            
+        except Exception as e:
+            print(f"Erro ao balancear {target_col}: {e}")
+
+# --- 6. RESUMO FINAL ---
+print("========================================================================")
+print("RESUMO FINAL DO BALANCEAMENTO")
+print("========================================================================")
+
+for tipo_ponto, targets in resultados_balanceamento.items():
+    print(f"{tipo_ponto}:")
+    
+    for target_col, resultados in targets.items():
+        print(f"  {target_col}:")
+        print(f"    Ratio ANTES: {resultados['ratio_antes']:.2f}:1 -> {resultados['status_antes']}")
+        print(f"    Ratio DEPOIS: {resultados['ratio_depois']:.2f}:1 -> {resultados['status_depois']}")
+
+print("BALANCEAMENTO CONCLUIDO!")
+print("Verifique as imagens na pasta 'figs/' para ver ANTES e DEPOIS")
+
+
 # visualizacao de dados usando metodo spearman 
 
 '''
@@ -148,5 +428,129 @@ fig.update_layout(
 fig.write_html("correlacoes_spearman.html")
 webbrowser.open("correlacoes_spearman.html")
 
+
+# Boxplot com linha de média mstrica onde coseguimos captar a diferencia no ph 
+# das ridencias mananciais e eta cerrado com a linha da  media
+
+ sns.boxplot(data=df_processado, x="TIPO_DE_PONTO_DETALHADO", y="PH")
+mean_ph = df_processado["PH"].mean()
+plt.axhline(mean_ph, color="red", linestyle="--", label=f"Média PH = {mean_ph:.2f}")
+plt.legend()
+plt.show()
+
+# --- Verifica/normaliza a coluna de DATA e ordena ---
+    ...: if 'DATA' not in df_processado.columns:
+    ...:     raise ValueError("Coluna 'DATA' não encontrada em df_processado. Verifique os nomes das colunas.")
+    ...: 
+    ...: df_processado['DATA'] = pd.to_datetime(df_processado['DATA'], errors='coerce')
+    ...: df_time = df_processado.dropna(subset=['DATA']).sort_values('DATA').copy()
+    ...: 
+    ...: # --- Colunas que vamos usar (mantendo os nomes que você já tem) ---
+    ...: feat_cols = [c for c in ['PH', 'COR', 'TURBIDEZ', 'CLORO'] if c in df_time.columns]
+    ...: target_col = 'E_COLI' if 'E_COLI' in df_time.columns else ( 'COLIFORMES_TOTAIS' if 'COLIFORMES_TOTAIS' in df_time.columns else None )
+    ...: 
+    ...: if len(feat_cols) == 0:
+    ...:     raise ValueError("Nenhuma feature PH/COR/TURBIDEZ/CLORO encontrada no df_processado.")
+    ...: 
+    ...: # --- Agregação diária (mediana) para suavizar e simplificar o gráfico ---
+    ...: cols_to_agg = feat_cols.copy()
+    ...: if target_col:
+    ...:     cols_to_agg.append(target_col)
+    ...: 
+    ...: agg_daily = df_time.set_index('DATA')[cols_to_agg].resample('D').median()
+    ...: 
+    ...: # --- Gráfico: cada feature + alvo em eixo secundário (se existir) ---
+    ...: fig, ax = plt.subplots(figsize=(14,5))
+    ...: 
+    ...: # plot das features (ex.: PH)
+    ...: colors = ['tab:blue','tab:orange','tab:green','tab:red']
+    ...: for i, col in enumerate(feat_cols):
+    ...:     if col in agg_daily.columns:
+    ...:         ax.plot(agg_daily.index, agg_daily[col], label=col, color=colors[i % len(colors)], linewidth=1)
+    ...: 
+    ...: # se existir alvo, plotar em eixo secundário (mais visível)
+    ...: if target_col and target_col in agg_daily.columns:
+    ...:     ax2 = ax.twinx()
+    ...:     ax2.plot(agg_daily.index, agg_daily[target_col].fillna(0), label=target_col, color='tab:brown', linestyle='-', linewidth=1, alpha=0.8)
+    ...:     ax2.set_ylabel(target_col)
+    ...: else:
+    ...:     ax2 = None
+    ...: 
+    ...: # --- Forçar os limites do eixo X para os dados reais (sem extrapolar) ---
+    ...: min_date = agg_daily.index.min()
+    ...: max_date = agg_daily.index.max()
+    ...: ax.set_xlim(min_date, max_date)
+    ...: 
+    ...: # --- Configurar ticks para mostrar apenas os anos existentes ---
+    ...: years = sorted({d.year for d in agg_daily.index})
+    ...: # cria posições em 1º de janeiro de cada ano presente
+    ...: year_ticks = [pd.Timestamp(year=y, month=1, day=1) for y in years]
+    ...: ax.set_xticks(year_ticks)
+    ...: ax.xaxis.set_major_locator(mdates.YearLocator())
+    ...: ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    ...: 
+    ...: # --- Legenda combinada (ax + ax2) ---
+    ...: lines, labels = ax.get_legend_handles_labels()
+    ...: if ax2:
+    ...:     lines2, labels2 = ax2.get_legend_handles_labels()
+    ...:     lines += lines2; labels += labels2
+    ...: ax.legend(lines, labels, loc='upper left')
+    ...: 
+    ...: ax.set_title("Séries temporais (agregação diária - mediana)")
+    ...: ax.set_xlabel("Data")
+    ...: ax.set_ylabel("Valor (mediana diária)")
+    ...: 
+    ...: plt.grid(axis='y', linestyle='--', alpha=0.5)
+    ...: plt.tight_layout()
+    ...: plt.show()
+
+
+
+# --- Análise de Séries Temporais ---
+print("\n--- Séries Temporais ---")
+
+# Verifica se existe coluna de datas no dataset
+if 'DATA' in df_processado.columns:
+    df_processado['DATA'] = pd.to_datetime(df_processado['DATA'], errors='coerce')
+    df_processado = df_processado.dropna(subset=['DATA'])
+
+    # Agrupamento por ano e cálculo da média
+    df_processado['ANO'] = df_processado['DATA'].dt.year
+    medias_anuais = df_processado.groupby('ANO')[['PH', 'COR', 'TURBIDEZ', 'CLORO', 'COLIFORMES_TOTAIS', 'E_COLI']].mean()
+
+    # --- Plot matplotlib/Seaborn ---
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=medias_anuais)
+    plt.title("Médias anuais dos parâmetros de qualidade da água")
+    plt.xlabel("Ano")
+    plt.ylabel("Valor médio")
+    plt.xticks(medias_anuais.index)  # <<-- força mostrar apenas os anos que existem
+    plt.grid(True)
+    plt.show()
+
+    # --- Plot interativo com Plotly ---
+    fig = px.line(
+        medias_anuais,
+        x=medias_anuais.index,
+        y=medias_anuais.columns,
+        markers=True,
+        title="Médias anuais dos parâmetros de qualidade da água (interativo)"
+    )
+    # Força o eixo X a ir só até o último ano disponível
+    fig.update_xaxes(range=[medias_anuais.index.min(), medias_anuais.index.max()])
+    fig.show()
+
+else:
+    print("Coluna 'DATA' não encontrada no dataset.")
+
+
 '''
 
+# 
+
+
+
+
+
+
+ 
