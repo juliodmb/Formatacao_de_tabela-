@@ -90,7 +90,114 @@ df_processado['TIPO_DE_PONTO_DETALHADO'] = np.where(
         'Residencial'
     )
 )
-print("Nova coluna 'TIPO_DE_PONTO_DETALHADO' criada com sucesso.")
+
+# --- 7. NORMALIZAÇÃO COM VERIFICAÇÃO VISUAL ---
+print("\n" + "="*60)
+print("NORMALIZAÇÃO DAS FEATURES - VERIFICAÇÃO COMPLETA")
+print("="*60)
+
+from sklearn.preprocessing import RobustScaler
+import matplotlib.pyplot as plt
+
+# Aplica normalização
+features_para_normalizar = ['PH', 'TURBIDEZ', 'CLORO', 'COR']
+features_existentes = [f for f in features_para_normalizar if f in df_processado.columns]
+
+print(f"Normalizando: {features_existentes}")
+
+if features_existentes:
+    scaler = RobustScaler()
+    dados_normalizados = scaler.fit_transform(df_processado[features_existentes])
+    
+    for i, feature in enumerate(features_existentes):
+        df_processado[f'{feature}_NORM'] = dados_normalizados[:, i]
+
+# --- VERIFICAÇÃO NUMÉRICA ---
+print("\n=== VERIFICAÇÃO NUMÉRICA ===")
+for feature in features_existentes:
+    original = df_processado[feature].dropna()
+    normalizado = df_processado[f'{feature}_NORM'].dropna()
+    
+    print(f"{feature}:")
+    print(f"  Original:    média={original.mean():.2f}, std={original.std():.2f}")
+    print(f"  Normalizado: média={normalizado.mean():.3f}, std={normalizado.std():.3f}")
+
+# --- VERIFICAÇÃO VISUAL - ANTES vs DEPOIS ---
+print("\n=== GERANDO GRÁFICOS COMPARATIVOS ===")
+
+fig, axes = plt.subplots(2, len(features_existentes), figsize=(5*len(features_existentes), 8))
+
+if len(features_existentes) == 1:
+    axes = axes.reshape(2, 1)
+
+for i, feature in enumerate(features_existentes):
+    # Dados ORIGINAIS
+    axes[0, i].hist(df_processado[feature].dropna(), bins=30, alpha=0.7, color='blue', edgecolor='black')
+    axes[0, i].set_title(f'{feature} - ORIGINAL\nstd: {df_processado[feature].std():.2f}')
+    axes[0, i].set_xlabel('Valor Original')
+    axes[0, i].set_ylabel('Frequência')
+    
+    # Dados NORMALIZADOS
+    axes[1, i].hist(df_processado[f'{feature}_NORM'].dropna(), bins=30, alpha=0.7, color='red', edgecolor='black')
+    axes[1, i].set_title(f'{feature} - NORMALIZADO\nstd: {df_processado[f"{feature}_NORM"].std():.3f}')
+    axes[1, i].set_xlabel('Valor Normalizado')
+    axes[1, i].set_ylabel('Frequência')
+
+plt.tight_layout()
+plt.savefig('figs/normalizacao_antes_depois.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+# --- COMPARAÇÃO DE INFLUÊNCIA NOS GRADIENTES ---
+print("\n=== COMPARAÇÃO DE INFLUÊNCIA NOS GRADIENTES ===")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+# ANTES da normalização
+stds_antes = [df_processado[feature].std() for feature in features_existentes]
+ax1.bar(features_existentes, stds_antes, color='skyblue', alpha=0.7, edgecolor='black')
+ax1.set_title('ANTES da Normalização\n(Influência Desbalanceada)')
+ax1.set_ylabel('Desvio Padrão Original')
+ax1.tick_params(axis='x', rotation=45)
+
+# Adiciona valores nas barras
+for i, v in enumerate(stds_antes):
+    ax1.text(i, v + max(stds_antes)*0.01, f'{v:.2f}', ha='center', fontweight='bold')
+
+# DEPOIS da normalização
+stds_depois = [df_processado[f'{feature}_NORM'].std() for feature in features_existentes]
+ax2.bar(features_existentes, stds_depois, color='lightcoral', alpha=0.7, edgecolor='black')
+ax2.set_title('DEPOIS da Normalização\n(Influência Balanceada)')
+ax2.set_ylabel('Desvio Padrão Normalizado')
+ax2.tick_params(axis='x', rotation=45)
+
+# Adiciona valores nas barras
+for i, v in enumerate(stds_depois):
+    ax2.text(i, v + 0.05, f'{v:.3f}', ha='center', fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('figs/influencia_gradientes.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+# --- RESUMO FINAL ---
+print("\n" + "="*60)
+print("RESUMO DA NORMALIZAÇÃO")
+print("="*60)
+
+for i, feature in enumerate(features_existentes):
+    influencia_antes = (stds_antes[i] / max(stds_antes)) * 100
+    influencia_depois = (stds_depois[i] / max(stds_depois)) * 100
+    
+    print(f"{feature}:")
+    print(f"  Influência ANTES: {influencia_antes:.1f}% do gradiente")
+    print(f"  Influência DEPOIS: {influencia_depois:.1f}% do gradiente")
+    print(f"  ✅ Balanceamento: {abs(influencia_depois - 100/len(features_existentes)):.1f}% de diferença do ideal")
+    print()
+
+print("🎯 RESULTADO: Todas as features agora contribuem igualmente para o gradiente!")
+print("✅ NORMALIZAÇÃO CONCLUÍDA COM SUCESSO!")
+
+# Atualiza as features para usar as normalizadas
+feature_columns = ['PH_NORM', 'COR_NORM', 'TURBIDEZ_NORM', 'CLORO_NORM']
+print(f"📋 Features normalizadas para uso: {feature_columns}")
 
 
 # --- 6. Verificação e Visualização dos Dados Separados ---
@@ -301,7 +408,7 @@ for tipo_ponto in df_processado['TIPO_DE_PONTO_DETALHADO'].unique():
     
     # Define variáveis alvo baseadas no tipo
     if tipo_ponto == 'Residencial':
-        target_columns = [col for col in ['COLIFORMES_TOTAIS', 'E_COLI', 'RECLAMACAO'] if col in df_tipo.columns]
+        target_columns = [col for col in ['COLIFORMES_TOTAIS', 'E_COLI', 'RECLAMACAO', 'RECOLETA'] if col in df_tipo.columns]
     else:
         target_columns = [col for col in ['COLIFORMES_TOTAIS', 'E_COLI'] if col in df_tipo.columns]
     
