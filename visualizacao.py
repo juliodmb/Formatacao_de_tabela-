@@ -189,15 +189,15 @@ for i, feature in enumerate(features_existentes):
     print(f"{feature}:")
     print(f"  Influência ANTES: {influencia_antes:.1f}% do gradiente")
     print(f"  Influência DEPOIS: {influencia_depois:.1f}% do gradiente")
-    print(f"  ✅ Balanceamento: {abs(influencia_depois - 100/len(features_existentes)):.1f}% de diferença do ideal")
+    print(f"   Balanceamento: {abs(influencia_depois - 100/len(features_existentes)):.1f}% de diferença do ideal")
     print()
 
-print("🎯 RESULTADO: Todas as features agora contribuem igualmente para o gradiente!")
-print("✅ NORMALIZAÇÃO CONCLUÍDA COM SUCESSO!")
+print(" RESULTADO: Todas as features agora contribuem igualmente para o gradiente!")
+print(" NORMALIZAÇÃO CONCLUÍDA COM SUCESSO!")
 
 # Atualiza as features para usar as normalizadas
 feature_columns = ['PH_NORM', 'COR_NORM', 'TURBIDEZ_NORM', 'CLORO_NORM']
-print(f"📋 Features normalizadas para uso: {feature_columns}")
+print(f" Features normalizadas para uso: {feature_columns}")
 
 
 # --- 6. Verificação e Visualização dos Dados Separados ---
